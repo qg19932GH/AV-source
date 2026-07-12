@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, 
     QTextEdit, QFileDialog, QGroupBox, QSplitter, QAbstractItemView
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings
 
 from parser import parse_filename
 from scraper import JavBusScraper
@@ -138,7 +138,8 @@ class OrganizerWorker(QThread):
         try:
             scraper = JavBusScraper(
                 base_url=self.options.get('base_url', 'https://www.javbus.com'),
-                proxy=self.options.get('proxy', None)
+                proxy=self.options.get('proxy', None),
+                is_cancelled_cb=lambda: self._is_cancelled
             )
             
             # Temp dir inside destination for downloading avatars before merging
@@ -327,6 +328,7 @@ class AVOrganizerApp(QMainWindow):
         self.scanned_files = [] # list of (filepath, code)
         self.worker = None
         self.init_ui()
+        self.load_settings()
         
     def init_ui(self):
         self.setWindowTitle("AV 视频自动整理工具")
@@ -540,8 +542,8 @@ class AVOrganizerApp(QMainWindow):
         net_grid.addWidget(self.url_edit, 0, 1)
         
         net_grid.addWidget(QLabel("网络代理:"), 1, 0)
-        self.proxy_edit = QLineEdit()
-        self.proxy_edit.setPlaceholderText("例如: 127.0.0.1:7890 (可选)")
+        self.proxy_edit = QLineEdit("127.0.0.1:10808")
+        self.proxy_edit.setPlaceholderText("例如: 127.0.0.1:10808 (可选)")
         net_grid.addWidget(self.proxy_edit, 1, 1)
         
         self.save_avatar_cb = QCheckBox("下载演员头像并设为文件夹预览图")
@@ -786,6 +788,31 @@ class AVOrganizerApp(QMainWindow):
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 else:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    
+    def load_settings(self):
+        settings = QSettings("AV_Organizer", "Settings")
+        self.src_edit.setText(settings.value("src_dir", ""))
+        self.dest_edit.setText(settings.value("dest_dir", ""))
+        self.unmatched_edit.setText(settings.value("unmatched_folder", "未分类"))
+        self.url_edit.setText(settings.value("base_url", "https://www.javbus.com"))
+        self.proxy_edit.setText(settings.value("proxy", "127.0.0.1:10808"))
+        
+        save_avatar = settings.value("save_avatar", "true") == "true"
+        self.save_avatar_cb.setChecked(save_avatar)
+        
+        save_cover = settings.value("save_cover", "false") == "true"
+        self.save_cover_cb.setChecked(save_cover)
+
+    def closeEvent(self, event):
+        settings = QSettings("AV_Organizer", "Settings")
+        settings.setValue("src_dir", self.src_edit.text().strip())
+        settings.setValue("dest_dir", self.dest_edit.text().strip())
+        settings.setValue("unmatched_folder", self.unmatched_edit.text().strip())
+        settings.setValue("base_url", self.url_edit.text().strip())
+        settings.setValue("proxy", self.proxy_edit.text().strip())
+        settings.setValue("save_avatar", "true" if self.save_avatar_cb.isChecked() else "false")
+        settings.setValue("save_cover", "true" if self.save_cover_cb.isChecked() else "false")
+        event.accept()
 
 def main():
     app = QApplication(sys.argv)

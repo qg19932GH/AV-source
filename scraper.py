@@ -3,14 +3,19 @@ from bs4 import BeautifulSoup
 import re
 
 class JavBusScraper:
-    def __init__(self, base_url="https://www.javbus.com", proxy=None):
+    def __init__(self, base_url="https://www.javbus.com", proxy=None, is_cancelled_cb=None):
         self.base_url = base_url.rstrip('/')
         self.proxy = proxy
+        self.is_cancelled_cb = is_cancelled_cb
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
         }
         self.avatar_cache = {} # Cache to avoid duplicate requests for the same actress
+        
+    def check_cancelled(self):
+        if self.is_cancelled_cb and self.is_cancelled_cb():
+            raise Exception("CancellationRequested")
         
     def get_proxies(self):
         if not self.proxy:
@@ -24,6 +29,7 @@ class JavBusScraper:
         }
 
     def scrape_movie_details(self, code):
+        self.check_cancelled()
         code_upper = code.upper()
         proxies = self.get_proxies()
         
@@ -33,6 +39,7 @@ class JavBusScraper:
         soup = None
         
         try:
+            self.check_cancelled()
             response = requests.get(search_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
             # Make sure we didn't get redirected to a driver-verification page
             if response.status_code == 200 and "driver-verify" not in response.url:
@@ -61,6 +68,7 @@ class JavBusScraper:
                         if selected_url and not selected_url.startswith('http'):
                             selected_url = self.base_url + selected_url
                             
+                        self.check_cancelled()
                         detail_res = requests.get(selected_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
                         if detail_res.status_code == 200:
                             detail_res.encoding = 'utf-8'
@@ -73,6 +81,7 @@ class JavBusScraper:
         if not is_search_success:
             direct_url = f"{self.base_url}/{code_upper}"
             try:
+                self.check_cancelled()
                 response = requests.get(direct_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
                 if response.status_code == 200:
                     response.encoding = 'utf-8'
@@ -147,6 +156,7 @@ class JavBusScraper:
             
         proxies = self.get_proxies()
         try:
+            self.check_cancelled()
             response = requests.get(star_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
             if response.status_code != 200:
                 return None
@@ -184,6 +194,7 @@ class JavBusScraper:
             headers['Referer'] = self.base_url
             
         try:
+            self.check_cancelled()
             response = requests.get(url, headers=headers, proxies=proxies, timeout=15, stream=True)
             if response.status_code == 200:
                 with open(save_path, 'wb') as f:
