@@ -25,28 +25,19 @@ class JavBusScraper:
 
     def scrape_movie_details(self, code):
         code_upper = code.upper()
-        # 1. Try direct page
-        url = f"{self.base_url}/{code_upper}"
         proxies = self.get_proxies()
         
+        # 1. Try search page first to find all potential versions (e.g. MIKR-015, MIKR-015_2025-05-30)
+        search_url = f"{self.base_url}/search/{code_upper}"
+        is_search_success = False
+        soup = None
+        
         try:
-            response = requests.get(url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
-            is_search = False
-            
-            if response.status_code == 404:
-                # 2. Try search page
-                search_url = f"{self.base_url}/search/{code_upper}"
-                response = requests.get(search_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
-                is_search = True
-                
-            if response.status_code != 200:
-                return None
-                
-            response.encoding = 'utf-8'
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            if is_search:
-                movie_boxes = soup.find_all('a', class_='movie-box')
+            response = requests.get(search_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
+            # Make sure we didn't get redirected to a driver-verification page
+            if response.status_code == 200 and "driver-verify" not in response.url:
+                search_soup = BeautifulSoup(response.text, 'html.parser')
+                movie_boxes = search_soup.find_all('a', class_='movie-box')
                 if movie_boxes:
                     candidates = []
                     for box in movie_boxes:
@@ -62,25 +53,40 @@ class JavBusScraper:
                         date_str = date_match.group(0) if date_match else "0000-00-00"
                         candidates.append((date_str, detail_url))
                     
-                    if not candidates:
-                        return None
+                    if candidates:
+                        # Sort candidates by release date in descending order (latest first)
+                        candidates.sort(key=lambda x: x[0], reverse=True)
                         
-                    # Sort candidates by release date in descending order (latest first)
-                    candidates.sort(key=lambda x: x[0], reverse=True)
-                    
-                    selected_url = candidates[0][1]
-                    if selected_url and not selected_url.startswith('http'):
-                        selected_url = self.base_url + selected_url
-                        
-                    response = requests.get(selected_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
-                    if response.status_code != 200:
-                        return None
+                        selected_url = candidates[0][1]
+                        if selected_url and not selected_url.startswith('http'):
+                            selected_url = self.base_url + selected_url
+                            
+                        detail_res = requests.get(selected_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
+                        if detail_res.status_code == 200:
+                            detail_res.encoding = 'utf-8'
+                            soup = BeautifulSoup(detail_res.text, 'html.parser')
+                            is_search_success = True
+        except Exception as e:
+            print(f"Search query failed, falling back to direct page check: {e}")
+            
+        # 2. If search did not yield results (or was blocked/redirected), fall back to direct page check
+        if not is_search_success:
+            direct_url = f"{self.base_url}/{code_upper}"
+            try:
+                response = requests.get(direct_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
+                if response.status_code == 200:
                     response.encoding = 'utf-8'
                     soup = BeautifulSoup(response.text, 'html.parser')
                 else:
-                    return None # No match found
+                    return None
+            except Exception as e:
+                print(f"Direct page fetch failed: {e}")
+                return None
+                
+        if not soup:
+            return None
             
-            # Now we are on the details page
+        try:
             # Parse title
             title = ""
             title_h3 = soup.find('h3')
