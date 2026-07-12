@@ -131,120 +131,156 @@ class OrganizerWorker(QThread):
             return False
 
     def run(self):
-        scraper = JavBusScraper(
-            base_url=self.options.get('base_url', 'https://www.javbus.com'),
-            proxy=self.options.get('proxy', None)
-        )
-        
-        # Temp dir inside destination for downloading avatars before merging
-        temp_dir = os.path.join(self.dest_dir, ".temp_avatars")
-        os.makedirs(temp_dir, exist_ok=True)
-        
         success_count = 0
         fail_count = 0
-        total_files = len(self.files)
         
-        self.log_signal.emit(f"开始处理，共 {total_files} 个文件...", "white")
-        
-        for idx, (filepath, code) in enumerate(self.files):
-            if self._is_cancelled:
-                self.log_signal.emit("操作被用户取消", "yellow")
-                break
-                
-            filename = os.path.basename(filepath)
-            self.log_signal.emit(f"[{idx+1}/{total_files}] 正在查询: {filename} (编号: {code})", "white")
-            self.status_signal.emit(idx, 3, "查询中...")
+        # Wrap the whole execution in try-except to prevent crashes on NAS/SMB
+        try:
+            scraper = JavBusScraper(
+                base_url=self.options.get('base_url', 'https://www.javbus.com'),
+                proxy=self.options.get('proxy', None)
+            )
             
-            # If code is empty, handle as unmatched/failed immediately
-            if not code or code.strip() == "":
-                self.handle_unmatched(idx, filepath, filename, temp_dir)
-                fail_count += 1
+            # Temp dir inside destination for downloading avatars before merging
+            temp_dir = os.path.join(self.dest_dir, ".temp_avatars")
+            try:
+                os.makedirs(temp_dir, exist_ok=True)
+            except Exception as e:
+                self.log_signal.emit(f"创建临时头像目录失败: {str(e)}", "red")
+                
+            total_files = len(self.files)
+            self.log_signal.emit(f"开始处理，共 {total_files} 个文件...", "white")
+            
+            for idx, (row, filepath, code) in enumerate(self.files):
+                if self._is_cancelled:
+                    self.log_signal.emit("操作被用户取消", "yellow")
+                    break
+                    
+                filename = os.path.basename(filepath)
+                self.log_signal.emit(f"[{idx+1}/{total_files}] 正在查询: {filename} (编号: {code})", "white")
+                self.status_signal.emit(row, 3, "查询中...")
+                
+                # If code is empty, handle as unmatched/failed immediately
+                if not code or code.strip() == "":
+                    try:
+                        self.handle_unmatched(row, filepath, filename, temp_dir)
+                    except Exception as e:
+                        self.log_signal.emit(f"处理未匹配文件出错: {str(e)}", "red")
+                    fail_count += 1
+                    progress = int(((idx + 1) / total_files) * 100)
+                    self.progress_signal.emit(progress)
+                    continue
+                    
+                # Scrape movie details
+                try:
+                    details = scraper.scrape_movie_details(code)
+                except Exception as e:
+                    self.log_signal.emit(f"刮削番号 {code} 数据出错: {str(e)}", "red")
+                    details = None
+                    
+                if details:
+                    actresses_info = details.get('actresses', [])
+                    actress_names = [a['name'] for a in actresses_info]
+                    
+                    if actress_names:
+                        # Multi-actress combined name
+                        combined_name = " & ".join(actress_names)
+                        self.log_signal.emit(f"  -> 找到演员: {combined_name}", "green")
+                        self.status_signal.emit(row, 2, combined_name)
+                        
+                        # Target folder
+                        target_folder = os.path.join(self.dest_dir, combined_name)
+                        try:
+                            os.makedirs(target_folder, exist_ok=True)
+                        except Exception as e:
+                            self.log_signal.emit(f"创建目标文件夹失败 ({combined_name}): {str(e)}，将作为未分类处理", "red")
+                            try:
+                                self.handle_unmatched(row, filepath, filename, temp_dir)
+                            except Exception as ue:
+                                self.log_signal.emit(f"移入未分类目录失败: {str(ue)}", "red")
+                            fail_count += 1
+                            progress = int(((idx + 1) / total_files) * 100)
+                            self.progress_signal.emit(progress)
+                            continue
+                            
+                        # Save avatar and set folder preview logo
+                        if self.options.get('save_avatar', True):
+                            local_avatars = []
+                            for i, actor in enumerate(actresses_info):
+                                avatar_url = scraper.get_avatar_url(actor['url'])
+                                if avatar_url:
+                                    ext = avatar_url.split('.')[-1].split('?')[0]
+                                    if ext not in ['jpg', 'jpeg', 'png', 'gif']:
+                                        ext = 'jpg'
+                                    temp_avatar_path = os.path.join(temp_dir, f"{code}_{i}.{ext}")
+                                    self.log_signal.emit(f"  -> 正在下载 {actor['name']} 的头像...", "white")
+                                    if scraper.download_image(avatar_url, temp_avatar_path):
+                                        local_avatars.append(temp_avatar_path)
+                                        
+                            if local_avatars:
+                                merged_temp_path = os.path.join(temp_dir, f"{code}_merged.jpg")
+                                self.log_signal.emit("  -> 正在处理/合并头像...", "white")
+                                if self.merge_avatars(local_avatars, merged_temp_path):
+                                    # Apply folder preview logo
+                                    self.set_folder_image_windows(target_folder, merged_temp_path)
+                                    
+                        # Download cover image
+                        if self.options.get('save_cover', False) and details.get('cover_url'):
+                            cover_url = details['cover_url']
+                            cover_ext = cover_url.split('.')[-1].split('?')[0]
+                            if cover_ext not in ['jpg', 'jpeg', 'png']:
+                                cover_ext = 'jpg'
+                            cover_dest = os.path.join(target_folder, f"{code}-cover.{cover_ext}")
+                            self.log_signal.emit("  -> 正在下载影片封面...", "white")
+                            scraper.download_image(cover_url, cover_dest)
+                            
+                        # Move video file and all related files (subtitles, etc.)
+                        self.move_files(filepath, target_folder)
+                        self.status_signal.emit(row, 3, "整理成功")
+                        success_count += 1
+                    else:
+                        # Movie found, but no actress listed (e.g., VR, solo/unknown)
+                        self.log_signal.emit(f"  -> 未在页面找到演员名字，移动到未分类", "yellow")
+                        try:
+                            self.handle_unmatched(row, filepath, filename, temp_dir)
+                        except Exception as e:
+                            self.log_signal.emit(f"移动到未分类出错: {str(e)}", "red")
+                        fail_count += 1
+                else:
+                    self.log_signal.emit(f"  -> 查询失败，未找到相关元数据", "red")
+                    try:
+                        self.handle_unmatched(row, filepath, filename, temp_dir)
+                    except Exception as e:
+                        self.log_signal.emit(f"移动到未分类出错: {str(e)}", "red")
+                    fail_count += 1
+                    
                 progress = int(((idx + 1) / total_files) * 100)
                 self.progress_signal.emit(progress)
-                continue
                 
-            # Scrape movie details
-            details = scraper.scrape_movie_details(code)
-            
-            if details:
-                actresses_info = details.get('actresses', [])
-                actress_names = [a['name'] for a in actresses_info]
-                
-                if actress_names:
-                    # Multi-actress combined name
-                    combined_name = " & ".join(actress_names)
-                    self.log_signal.emit(f"  -> 找到演员: {combined_name}", "green")
-                    self.status_signal.emit(idx, 2, combined_name)
-                    
-                    # Target folder
-                    target_folder = os.path.join(self.dest_dir, combined_name)
-                    os.makedirs(target_folder, exist_ok=True)
-                    
-                    # Save avatar and set folder preview logo
-                    if self.options.get('save_avatar', True):
-                        local_avatars = []
-                        for i, actor in enumerate(actresses_info):
-                            avatar_url = scraper.get_avatar_url(actor['url'])
-                            if avatar_url:
-                                ext = avatar_url.split('.')[-1].split('?')[0]
-                                if ext not in ['jpg', 'jpeg', 'png', 'gif']:
-                                    ext = 'jpg'
-                                temp_avatar_path = os.path.join(temp_dir, f"{code}_{i}.{ext}")
-                                self.log_signal.emit(f"  -> 正在下载 {actor['name']} 的头像...", "white")
-                                if scraper.download_image(avatar_url, temp_avatar_path):
-                                    local_avatars.append(temp_avatar_path)
-                                    
-                        if local_avatars:
-                            merged_temp_path = os.path.join(temp_dir, f"{code}_merged.jpg")
-                            self.log_signal.emit("  -> 正在处理/合并头像...", "white")
-                            if self.merge_avatars(local_avatars, merged_temp_path):
-                                # Apply folder preview logo
-                                self.set_folder_image_windows(target_folder, merged_temp_path)
-                                
-                    # Download cover image
-                    if self.options.get('save_cover', False) and details.get('cover_url'):
-                        cover_url = details['cover_url']
-                        cover_ext = cover_url.split('.')[-1].split('?')[0]
-                        if cover_ext not in ['jpg', 'jpeg', 'png']:
-                            cover_ext = 'jpg'
-                        cover_dest = os.path.join(target_folder, f"{code}-cover.{cover_ext}")
-                        self.log_signal.emit("  -> 正在下载影片封面...", "white")
-                        scraper.download_image(cover_url, cover_dest)
-                        
-                    # Move video file and all related files (subtitles, etc.)
-                    self.move_files(filepath, target_folder)
-                    self.status_signal.emit(idx, 3, "整理成功")
-                    success_count += 1
-                else:
-                    # Movie found, but no actress listed (e.g., VR, solo/unknown)
-                    self.log_signal.emit(f"  -> 未在页面找到演员名字，移动到未分类", "yellow")
-                    self.handle_unmatched(idx, filepath, filename, temp_dir)
-                    fail_count += 1
-            else:
-                self.log_signal.emit(f"  -> 查询失败，未找到相关元数据", "red")
-                self.handle_unmatched(idx, filepath, filename, temp_dir)
-                fail_count += 1
-                
-            progress = int(((idx + 1) / total_files) * 100)
-            self.progress_signal.emit(progress)
-            
-        # Clean up temp avatars directory
-        try:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-        except Exception:
-            pass
-            
-        self.finished_signal.emit(success_count, fail_count)
+            # Clean up temp avatars directory
+            try:
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+        except Exception as outer_err:
+            self.log_signal.emit(f"处理任务时发生严重异常: {str(outer_err)}", "red")
+        finally:
+            self.finished_signal.emit(success_count, fail_count)
 
-    def handle_unmatched(self, idx, filepath, filename, temp_dir):
+    def handle_unmatched(self, row, filepath, filename, temp_dir):
         """Moves unmatched files to the designated 'Unclassified' folder"""
         unmatched_name = self.options.get('unmatched_folder', '未分类')
         unmatched_dir = os.path.join(self.dest_dir, unmatched_name)
-        os.makedirs(unmatched_dir, exist_ok=True)
-        
+        try:
+            os.makedirs(unmatched_dir, exist_ok=True)
+        except Exception as e:
+            self.log_signal.emit(f"创建未分类文件夹失败: {str(e)}", "red")
+            self.status_signal.emit(row, 3, "分类创建失败")
+            return
+            
         self.move_files(filepath, unmatched_dir)
-        self.status_signal.emit(idx, 3, f"未匹配 (已移至{unmatched_name})")
+        self.status_signal.emit(row, 3, f"未匹配 (已移至{unmatched_name})")
 
     def move_files(self, filepath, target_folder):
         """Moves a video file and any related files (subtitles/nfo) with the same base name"""
@@ -662,14 +698,17 @@ class AVOrganizerApp(QMainWindow):
         # Get list from table (in case user modified the parsed codes)
         files_to_process = []
         for row in range(self.table.rowCount()):
+            if row >= len(self.scanned_files):
+                continue
             original_filepath = self.scanned_files[row][0]
             # Ensure the file still exists
             if not os.path.exists(original_filepath):
                 self.log(f"文件已不存在: {os.path.basename(original_filepath)}，跳过", "yellow")
+                self.update_table_item(row, 3, "文件不存在")
                 continue
             code_item = self.table.item(row, 1)
             code = code_item.text().strip() if code_item else ""
-            files_to_process.append((original_filepath, code))
+            files_to_process.append((row, original_filepath, code))
             
         if not files_to_process:
             self.log("无待处理的视频文件。请先扫描源文件夹并确保视频列表非空。", "yellow")
