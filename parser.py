@@ -28,6 +28,11 @@ def parse_filename(filename):
         dash = match.group(2)
         numbers = match.group(3)
         
+        # Normalize leading zeros for standard JAV code number (keep at least 3 digits)
+        if len(numbers) > 3 and numbers.startswith('0'):
+            while len(numbers) > 3 and numbers.startswith('0'):
+                numbers = numbers[1:]
+        
         start_idx = match.start()
         end_idx = match.end()
         

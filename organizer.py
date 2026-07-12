@@ -183,9 +183,15 @@ class OrganizerWorker(QThread):
                     actress_names = [a['name'] for a in actresses_info]
                     
                     if actress_names:
-                        # Multi-actress combined name
-                        combined_name = " & ".join(actress_names)
-                        self.log_signal.emit(f"  -> 找到演员: {combined_name}", "green")
+                        actual_combined = " & ".join(actress_names)
+                        self.log_signal.emit(f"  -> 找到演员: {actual_combined}", "green")
+                        
+                        if len(actress_names) > 5:
+                            combined_name = "多人共演"
+                            self.log_signal.emit("  -> 演员人数大于 5 人，归类至多人共演文件夹", "yellow")
+                        else:
+                            combined_name = actual_combined
+                            
                         self.status_signal.emit(row, 2, combined_name)
                         
                         # Target folder

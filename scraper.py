@@ -46,12 +46,33 @@ class JavBusScraper:
             soup = BeautifulSoup(response.text, 'html.parser')
             
             if is_search:
-                movie_box = soup.find('a', class_='movie-box')
-                if movie_box:
-                    detail_url = movie_box.get('href')
-                    if detail_url and not detail_url.startswith('http'):
-                        detail_url = self.base_url + detail_url
-                    response = requests.get(detail_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
+                movie_boxes = soup.find_all('a', class_='movie-box')
+                if movie_boxes:
+                    candidates = []
+                    for box in movie_boxes:
+                        detail_url = box.get('href')
+                        if not detail_url:
+                            continue
+                        
+                        # Extract release date from text or raw HTML inside the box
+                        date_match = re.search(r'\d{4}-\d{2}-\d{2}', box.text)
+                        if not date_match:
+                            date_match = re.search(r'\d{4}-\d{2}-\d{2}', str(box))
+                            
+                        date_str = date_match.group(0) if date_match else "0000-00-00"
+                        candidates.append((date_str, detail_url))
+                    
+                    if not candidates:
+                        return None
+                        
+                    # Sort candidates by release date in descending order (latest first)
+                    candidates.sort(key=lambda x: x[0], reverse=True)
+                    
+                    selected_url = candidates[0][1]
+                    if selected_url and not selected_url.startswith('http'):
+                        selected_url = self.base_url + selected_url
+                        
+                    response = requests.get(selected_url, headers=self.headers, cookies={'age': 'verified'}, proxies=proxies, timeout=10)
                     if response.status_code != 200:
                         return None
                     response.encoding = 'utf-8'
