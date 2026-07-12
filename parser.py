@@ -19,48 +19,77 @@ def parse_filename(filename):
     if th_match:
         return th_match.group(1).lower()
         
-    # 4. Standard JAV style: Letters followed by numbers (with optional dash/space)
-    # We restrict letters to 2-8 chars, numbers to 3-6 chars.
-    # Scan all candidates, rank them by a confidence score to filter out domain names and advertising keywords.
+    # 4. Standard JAV style: Letters (optionally containing numbers) followed by numbers
     candidates = []
-    for match in re.finditer(r'([a-zA-Z]{2,8})\s*(-?)\s*([0-9]{3,6})', name):
-        letters = match.group(1)
-        dash = match.group(2)
-        numbers = match.group(3)
+    
+    # Pattern 1: With hyphen (dash is present). Prefix can be letters optionally followed by numbers.
+    # We allow 1-8 letters optionally followed by 0-3 digits as prefix.
+    pattern_with_dash = r'([a-zA-Z]{1,8}[0-9]{0,3})\s*-\s*([0-9]{3,6})'
+    for match in re.finditer(pattern_with_dash, name):
+        prefix = match.group(1)
+        numbers = match.group(2)
         
-        # Normalize leading zeros for standard JAV code number (keep at least 3 digits)
+        # Verify it has letters in the prefix
+        letters_only = re.sub(r'[0-9]', '', prefix)
+        if not letters_only:
+            continue
+            
+        # Normalize leading zeros for numbers (keep at least 3 digits)
         if len(numbers) > 3 and numbers.startswith('0'):
             while len(numbers) > 3 and numbers.startswith('0'):
                 numbers = numbers[1:]
-        
+                
         start_idx = match.start()
         end_idx = match.end()
         
-        score = 0
+        score = 10  # Base score of 10 because it has a dash
         
-        # A hyphen between letters and numbers is a strong indicator of a real JAV code
-        if dash == '-':
-            score += 10
-            
-        # If followed by '.' and 2-6 letters (e.g. '.com', '.xyz'), it's likely a domain label (e.g. hhd800.com)
         after_match = name[end_idx:]
         if after_match.startswith('.'):
             m = re.match(r'^\.[a-zA-Z]{2,6}\b', after_match)
             if m:
                 score -= 20
                 
-        # If preceded by '.', it is likely a domain extension (e.g. '.com' in madoubt.com)
         if start_idx > 0 and name[start_idx-1] == '.':
             score -= 20
             
-        # Common domain extensions / ad words that shouldn't be matched as JAV code prefixes
-        if letters.lower() in {'com', 'net', 'org', 'xyz', 'club', 'vip', 'cc', 'co', 'info', 'me', 'top', 'win', 'space', 'icu', 'red', 'blue', 'www', 'http', 'https', 'html', 'htm'}:
+        if letters_only.lower() in {'com', 'net', 'org', 'xyz', 'club', 'vip', 'cc', 'co', 'info', 'me', 'top', 'win', 'space', 'icu', 'red', 'blue', 'www', 'http', 'https', 'html', 'htm'}:
             score -= 30
             
-        candidates.append((score, start_idx, f"{letters.upper()}-{numbers}"))
+        candidates.append((score, start_idx, f"{prefix.upper()}-{numbers}"))
+        
+    # Pattern 2: Without hyphen (no dash). Prefix must be 2-8 letters only.
+    pattern_without_dash = r'([a-zA-Z]{2,8})\s*([0-9]{3,6})'
+    for match in re.finditer(pattern_without_dash, name):
+        prefix = match.group(1)
+        numbers = match.group(2)
+        
+        # Normalize leading zeros for numbers (keep at least 3 digits)
+        if len(numbers) > 3 and numbers.startswith('0'):
+            while len(numbers) > 3 and numbers.startswith('0'):
+                numbers = numbers[1:]
+                
+        start_idx = match.start()
+        end_idx = match.end()
+        
+        score = 0  # No dash, so base score is 0
+        
+        after_match = name[end_idx:]
+        if after_match.startswith('.'):
+            m = re.match(r'^\.[a-zA-Z]{2,6}\b', after_match)
+            if m:
+                score -= 20
+                
+        if start_idx > 0 and name[start_idx-1] == '.':
+            score -= 20
+            
+        if prefix.lower() in {'com', 'net', 'org', 'xyz', 'club', 'vip', 'cc', 'co', 'info', 'me', 'top', 'win', 'space', 'icu', 'red', 'blue', 'www', 'http', 'https', 'html', 'htm'}:
+            score -= 30
+            
+        candidates.append((score, start_idx, f"{prefix.upper()}-{numbers}"))
         
     if candidates:
-        # Sort by score descending (highest first), then by start index ascending (earliest first)
+        # Sort by score descending, then by start index ascending
         candidates.sort(key=lambda x: (-x[0], x[1]))
         return candidates[0][2]
         
