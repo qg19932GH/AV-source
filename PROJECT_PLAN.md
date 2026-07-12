@@ -1,0 +1,43 @@
+# AV 视频自动整理工具 - 项目概况与任务计划 (Project Overview & Task Plan)
+
+本项目是一个基于 Python 和 PyQt6 编写的本地 AV 视频文件自动分类整理工具。它通过扫描指定目录下的视频文件，智能提取影片番号，从 JAVBus 抓取影片元数据（如演员名字、头像、封面图等），并自动将视频及其关联文件（如字幕）重命名并归类到演员文件夹中。
+
+---
+
+## 📂 项目模块结构与说明
+
+以下是该项目的所有核心文件及其对应的职责：
+
+| 文件名称 | 模块职责 | 具体功能描述 |
+| :--- | :--- | :--- |
+| 📄 **[parser.py](file:///c:/Users/5A5851/Desktop/git/av%20soot/parser.py)** | **番号解析器** | 核心算法模块。能够识别 FC2、Caribbeancom、Tokyo-Hot 以及标准 JAV 番号。已升级为基于置信度打分的智能过滤算法，可以自动剔除诸如 `hhd800.com@`、`629322.xyz` 等文件名中的网页广告前缀。 |
+| 📄 **[scraper.py](file:///c:/Users/5A5851/Desktop/git/av%20soot/scraper.py)** | **元数据抓取器** | 爬虫引擎。负责通过 Requests 与 BeautifulSoup 在后台访问 JAVBus 进行网页爬取，提取影片封面、主演演员名字以及演员个人头像等信息。支持网络代理设置。 |
+| 📄 **[organizer.py](file:///c:/Users/5A5851/Desktop/git/av%20soot/organizer.py)** | **主界面 (GUI)** | 采用 PyQt6 编写的暗色调桌面应用程序。提供源目录扫描、番号手动校对修改、演员文件夹预览图 Windows 特效注入（desktop.ini）、执行进度展示以及日志输出。 |
+| 📄 **[build_exe.py](file:///c:/Users/5A5851/Desktop/git/av%20soot/build_exe.py)** | **构建辅助脚本** | 本地 PyInstaller 打包构建命令封装。方便在本地终端快速调取 Python 环境，把项目一键编译为单个无控制台的 `AV_Organizer.exe` 二进制文件。 |
+| ⚙️ **[.github/workflows/build.yml](file:///c:/Users/5A5851/Desktop/git/av%20soot/.github/workflows/build.yml)** | **CI/CD 自动化构建流** | GitHub Actions 工作流。当代码被推送（Push）至 `main` 或 `master` 分支时，云端 Windows 虚拟机会自动拉取代码，安装依赖，执行打包，并将生成的 `AV_Organizer.exe` 作为 Artifact 上传供用户下载。 |
+
+---
+
+## 📈 项目任务计划与执行状态 (Task Plan)
+
+我们为本项目定制了以下演进路线，记录了已完成与未来计划的特性：
+
+### 🏁 阶段 1：核心骨架建设 (已完成)
+- [x] 基于 PyQt6 完成控制面板和列表表格的多列布局设计。
+- [x] 实现基本的文件扫描和后缀匹配，支持 `.mp4`, `.mkv`, `.avi` 等常见格式。
+- [x] 开发直接通过 `requests` 查询 JAVBus 信息的爬虫机制。
+- [x] 引入基于 Windows `desktop.ini` 属性的文件夹头像生成机制。
+
+### 🚀 阶段 2：番号精准度与体验优化 (已完成 - 本次改动)
+- [x] **番号打分匹配算法**：重构单一正则，通过扫描全部可能项，配合破折号加分、域名扣分机制，过滤 `aavv121.com` 等网页广告，完美支持复杂污染文件名的正确番号提取。
+- [x] **暗色系滚动条美化**：优化 QTableWidget 的 QScrollBar 全局样式，使其变成与 Dark Mode 融为一体的现代扁平圆角滑块，并带主题紫色悬停效果。
+- [x] **列表像素级滚动**：为文件列表加入 `ScrollPerPixel` 模式，解决多视频时滑动困难卡顿的问题。
+
+### ☁️ 阶段 3：自动化 CI/CD 交付 (已完成)
+- [x] 编写并配置 GitHub Actions 工作流脚本。
+- [x] 排除本地 `dist/` 和 `build/` 冗余大二进制文件的推送，通过云端纯净构建产出 exe 软件。
+
+### 🔮 阶段 4：未来升级计划 (待办/规划中)
+- [ ] **多线程爬虫支持**：对于批量扫描的大量视频，采用多线程/协程并发查询，大幅缩短等待时间。
+- [ ] **多刮削源切换**：加入除了 JAVBus 外的其他刮削源（如 JAVDB、AirAV 等），提供番号未找到时的备用查询方案。
+- [ ] **影片本地元数据 NFO 写入**：在归类视频时，为每个视频自动写入标准 NFO 信息文件，方便 Kodi/Jellyfin/Emby 等媒体服务器直接读取海报与同人图。

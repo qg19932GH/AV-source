@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QGridLayout, QLabel, QLineEdit, QPushButton, QCheckBox, 
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, 
-    QTextEdit, QFileDialog, QGroupBox, QSplitter
+    QTextEdit, QFileDialog, QGroupBox, QSplitter, QAbstractItemView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
@@ -399,6 +399,50 @@ class AVOrganizerApp(QMainWindow):
                 font-size: 12px;
                 color: #b0b0b0;
             }
+            QScrollBar:vertical {
+                border: none;
+                background: #1e1e1e;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #3d3d3d;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #bb86fc;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #1e1e1e;
+                height: 10px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #3d3d3d;
+                min-width: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #bb86fc;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                border: none;
+                background: none;
+                width: 0px;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
         """)
 
         # Main Widget and Splitter Layout
@@ -499,6 +543,8 @@ class AVOrganizerApp(QMainWindow):
         # Table of files
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["视频文件名", "识别番号 (双击可修改)", "匹配演员", "当前状态"])
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
