@@ -3,8 +3,11 @@ import sys
 
 def build():
     print("Starting build process using PyInstaller...")
+    import sys
     cmd = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--noconsole",
         "--onefile",
         "--name=AV_Organizer",
