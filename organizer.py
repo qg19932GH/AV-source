@@ -213,24 +213,16 @@ class OrganizerWorker(QThread):
                         # Save avatar and set folder preview logo
                         has_preview = os.path.exists(os.path.join(target_folder, "folder.jpg"))
                         if self.options.get('save_avatar', True) and len(actress_names) <= 5 and not has_preview:
-                            local_avatars = []
-                            for i, actor in enumerate(actresses_info):
-                                avatar_url = scraper.get_avatar_url(actor['url'])
-                                if avatar_url:
-                                    ext = avatar_url.split('.')[-1].split('?')[0]
-                                    if ext not in ['jpg', 'jpeg', 'png', 'gif']:
-                                        ext = 'jpg'
-                                    temp_avatar_path = os.path.join(temp_dir, f"{code}_{i}.{ext}")
-                                    self.log_signal.emit(f"  -> 正在下载 {actor['name']} 的头像...", "white")
-                                    if scraper.download_image(avatar_url, temp_avatar_path):
-                                        local_avatars.append(temp_avatar_path)
-                                        
-                            if local_avatars:
-                                merged_temp_path = os.path.join(temp_dir, f"{code}_merged.jpg")
-                                self.log_signal.emit("  -> 正在处理/合并头像...", "white")
-                                if self.merge_avatars(local_avatars, merged_temp_path):
-                                    # Apply folder preview logo
-                                    self.set_folder_image_windows(target_folder, merged_temp_path)
+                            actor = actresses_info[0]
+                            avatar_url = scraper.get_avatar_url(actor['url'])
+                            if avatar_url:
+                                ext = avatar_url.split('.')[-1].split('?')[0]
+                                if ext not in ['jpg', 'jpeg', 'png', 'gif']:
+                                    ext = 'jpg'
+                                temp_avatar_path = os.path.join(temp_dir, f"{code}_0.{ext}")
+                                self.log_signal.emit(f"  -> 正在下载首位演员 {actor['name']} 的头像...", "white")
+                                if scraper.download_image(avatar_url, temp_avatar_path):
+                                    self.set_folder_image_windows(target_folder, temp_avatar_path)
                                     
                         # Download cover image
                         if self.options.get('save_cover', False) and details.get('cover_url'):
