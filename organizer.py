@@ -211,7 +211,8 @@ class OrganizerWorker(QThread):
                             continue
                             
                         # Save avatar and set folder preview logo
-                        if self.options.get('save_avatar', True) and len(actress_names) <= 5:
+                        has_preview = os.path.exists(os.path.join(target_folder, "folder.jpg"))
+                        if self.options.get('save_avatar', True) and len(actress_names) <= 5 and not has_preview:
                             local_avatars = []
                             for i, actor in enumerate(actresses_info):
                                 avatar_url = scraper.get_avatar_url(actor['url'])

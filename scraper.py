@@ -191,7 +191,7 @@ class JavBusScraper:
         if 'dmm.co.jp' in url or 'dmm.com' in url:
             headers['Referer'] = 'https://www.dmm.co.jp/'
         elif 'javbus' in url:
-            headers['Referer'] = self.base_url
+            headers['Referer'] = self.base_url + '/'
             
         try:
             self.check_cancelled()
